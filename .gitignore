@@ -1,0 +1,8 @@
+# Local one-off automation scripts
+macros/
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+plan.md
+skills/

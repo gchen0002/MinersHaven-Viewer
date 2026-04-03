@@ -138,39 +138,54 @@ def run_viewer(cfg: AppConfig, items: dict[str, dict], index: dict) -> None:
                     time.sleep(cfg.scan_interval_ms / 1000)
                     continue
 
-            hover_region = _resolve_hover_region(cfg, mouse_controller, screen_width, screen_height)
-
-            # Let game tooltip settle for a couple cycles while holding key.
             if state.warmup_left > 0:
                 state.warmup_left -= 1
                 if cfg.debug_mode:
                     ui.set_debug(
-                        f"hold=YES warmup={state.warmup_left} region=({hover_region.left},{hover_region.top},"
-                        f"{hover_region.width},{hover_region.height})"
+                        f"hold=YES warmup={state.warmup_left} multi={'ON' if cfg.multi_region_scan else 'OFF'} "
+                        f"cursor=({cursor_x},{cursor_y})"
                     )
                 time.sleep(cfg.scan_interval_ms / 1000)
                 continue
 
-            hover_ocr = ocr.read_region(
-                hover_region,
-                psm=7,
-                whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' -",
-            )
-            if not hover_ocr.text:
-                if cfg.debug_mode:
-                    ui.set_debug(
-                        f"hold=YES ocr=EMPTY conf={hover_ocr.confidence:.0f} "
-                        f"region=({hover_region.left},{hover_region.top},{hover_region.width},{hover_region.height})"
-                    )
-                time.sleep(cfg.scan_interval_ms / 1000)
-                continue
+            if cfg.multi_region_scan:
+                multi_result = _scan_multi_region(ocr, cfg, mouse_controller, screen_width, screen_height, matcher)
+                if multi_result is None:
+                    if cfg.debug_mode:
+                        ui.set_debug(f"hold=YES multi_scan=NO_TEXT cursor=({cursor_x},{cursor_y})")
+                    time.sleep(cfg.scan_interval_ms / 1000)
+                    continue
 
-            alias, probe_score = matcher.probe(hover_ocr.text)
-            match = matcher.match(hover_ocr.text, min_score=cfg.min_match_score)
+                hover_ocr_text = multi_result.ocr_text
+                hover_ocr_conf = multi_result.confidence
+                alias = multi_result.alias
+                probe_score = multi_result.probe_score
+            else:
+                hover_region = _resolve_hover_region(cfg, mouse_controller, screen_width, screen_height)
+
+                hover_ocr = ocr.read_region(
+                    hover_region,
+                    psm=7,
+                    whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' -",
+                )
+                if not hover_ocr.text:
+                    if cfg.debug_mode:
+                        ui.set_debug(
+                            f"hold=YES ocr=EMPTY conf={hover_ocr.confidence:.0f} "
+                            f"region=({hover_region.left},{hover_region.top},{hover_region.width},{hover_region.height})"
+                        )
+                    time.sleep(cfg.scan_interval_ms / 1000)
+                    continue
+
+                hover_ocr_text = hover_ocr.text
+                hover_ocr_conf = hover_ocr.confidence
+                alias, probe_score = matcher.probe(hover_ocr.text)
+
+            match = matcher.match(hover_ocr_text, min_score=cfg.min_match_score)
             if not match:
                 if cfg.debug_mode:
                     ui.set_debug(
-                        f"hold=YES ocr='{hover_ocr.text[:26]}' best='{alias or '-'}' "
+                        f"hold=YES ocr='{hover_ocr_text[:26]}' best='{alias or '-'}' "
                         f"score={probe_score}/{cfg.min_match_score}"
                     )
                 time.sleep(cfg.scan_interval_ms / 1000)
@@ -193,7 +208,7 @@ def run_viewer(cfg: AppConfig, items: dict[str, dict], index: dict) -> None:
                 if cfg.debug_mode:
                     ui.set_debug(
                         f"hold=YES candidate='{candidate}' stable={state.stable_count}/{required_frames} "
-                        f"ocr='{hover_ocr.text[:18]}'"
+                        f"ocr='{hover_ocr_text[:18]}'"
                     )
                 time.sleep(cfg.scan_interval_ms / 1000)
                 continue
@@ -204,13 +219,19 @@ def run_viewer(cfg: AppConfig, items: dict[str, dict], index: dict) -> None:
                     ui.update_item(item, score=match.score)
                     state.active_item = candidate
                     if cfg.debug_mode:
-                        ui.set_debug(
-                            f"MATCHED {item.get('name', candidate)} score={match.score} "
-                            f"ocr='{hover_ocr.text[:24]}'"
-                        )
+                        if cfg.multi_region_scan:
+                            ui.set_debug(
+                                f"MATCHED {item.get('name', candidate)} score={match.score} "
+                                f"ocr='{hover_ocr_text[:24]}' variant={multi_result.variant_idx}/{multi_result.variant_total}"
+                            )
+                        else:
+                            ui.set_debug(
+                                f"MATCHED {item.get('name', candidate)} score={match.score} "
+                                f"ocr='{hover_ocr_text[:24]}'"
+                            )
             elif cfg.debug_mode:
                 ui.set_debug(
-                    f"hold=YES locked='{candidate}' score={match.score} ocr='{hover_ocr.text[:24]}'"
+                    f"hold=YES locked='{candidate}' score={match.score} ocr='{hover_ocr_text[:24]}'"
                 )
 
             time.sleep(cfg.scan_interval_ms / 1000)
@@ -281,6 +302,97 @@ def _any_vk_down(codes: list[int]) -> bool:
         if user32.GetAsyncKeyState(code) & 0x8000:
             return True
     return False
+
+
+def _build_region_grid(
+    cursor_x: int,
+    cursor_y: int,
+    base_region: Region,
+    screen_w: int,
+    screen_h: int,
+) -> list[tuple[int, int, int, Region]]:
+    step_x = max(30, int(base_region.width * 0.25))
+    step_y = max(20, int(base_region.height * 0.25))
+
+    offsets = [
+        (0, 0),
+        (-step_x, 0),
+        (step_x, 0),
+        (0, -step_y),
+        (0, step_y),
+        (-step_x, -step_y),
+        (step_x, -step_y),
+        (-step_x, step_y),
+        (step_x, step_y),
+    ]
+
+    regions: list[tuple[int, int, int, Region]] = []
+    for idx, (off_x, off_y) in enumerate(offsets):
+        width = max(20, int(base_region.width))
+        height = max(20, int(base_region.height))
+        left = int(cursor_x + base_region.left + off_x)
+        top = int(cursor_y + base_region.top + off_y)
+
+        if left < 0:
+            left = 0
+        if top < 0:
+            top = 0
+        if left + width > screen_w:
+            left = max(0, screen_w - width)
+        if top + height > screen_h:
+            top = max(0, screen_h - height)
+
+        regions.append((idx, off_x, off_y, Region(left=left, top=top, width=width, height=height)))
+
+    return regions
+
+
+@dataclass(slots=True)
+class MultiScanResult:
+    region: Region
+    ocr_text: str
+    confidence: float
+    alias: str | None
+    probe_score: float
+    variant_idx: int
+    variant_total: int
+
+
+def _scan_multi_region(
+    ocr: OcrEngine,
+    cfg: AppConfig,
+    mouse_controller: mouse.Controller,
+    screen_width: int,
+    screen_height: int,
+    matcher: ItemMatcher,
+) -> MultiScanResult | None:
+    if cfg.hover_use_cursor:
+        cursor_x, cursor_y = mouse_controller.position
+        region_grid = _build_region_grid(cursor_x, cursor_y, cfg.cursor_region, screen_width, screen_height)
+    else:
+        region_grid = [(0, 0, 0, _resolve_hover_region(cfg, mouse_controller, screen_width, screen_height))]
+
+    whitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' -"
+    best_result: MultiScanResult | None = None
+
+    for idx, _off_x, _off_y, region in region_grid:
+        ocr_result = ocr.read_region(region, psm=7, whitelist=whitelist)
+        if not ocr_result.text:
+            continue
+
+        alias, probe_score = matcher.probe(ocr_result.text)
+        if best_result is None or probe_score > best_result.probe_score:
+            best_result = MultiScanResult(
+                region=region,
+                ocr_text=ocr_result.text,
+                confidence=ocr_result.confidence,
+                alias=alias,
+                probe_score=probe_score,
+                variant_idx=idx + 1,
+                variant_total=len(region_grid),
+            )
+
+    return best_result
 
 
 def _resolve_hover_region(

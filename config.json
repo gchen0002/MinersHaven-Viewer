@@ -26,5 +26,6 @@
   "min_match_score": 62,
   "debug_mode": true,
   "warmup_cycles": 2,
-  "tesseract_cmd": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+  "tesseract_cmd": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
+  "multi_region_scan": true
 }

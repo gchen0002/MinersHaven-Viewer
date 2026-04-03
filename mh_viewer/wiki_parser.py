@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -20,15 +22,108 @@ from .utils import (
 from .wiki_client import WikiPage
 
 
-PARSER_VERSION = "1.0.0"
+PARSER_VERSION = "1.2.0"
 ELEMENT_NAMES = ["aether", "water", "earth", "fire", "order", "entropy"]
 SIZE_CATEGORIES = ["tiny", "small", "medium", "large", "huge"]
+_EFFECT_RULES_PATH = Path(__file__).with_name("effect_rules.json")
+_RULE_KEYS = ("status_effects", "behaviors", "synergy_keywords", "exclude_keywords")
+
+_DEFAULT_EFFECT_RULES: dict[str, Any] = {
+    "version": "builtin-1",
+    "status_effects": {
+        "fire": ["fire", "burn", "burning", "ignite"],
+        "frost": ["frost", "frozen", "freeze", "frostbite"],
+        "poison": ["poison", "poisoned"],
+        "radioactive": ["radioactive", "radiation"],
+        "wet": ["wet", "waterlogged"],
+        "shield": ["shield", "shielded"],
+        "anti_gravity": ["anti gravity", "antigravity"],
+        "neon": ["neon"],
+    },
+    "behaviors": {
+        "resetter": ["reset", "resetting", "tesla", "upgrade count", "upgrade counter"],
+        "teleporter": ["teleport", "portal", "warp"],
+        "splitter": ["split", "branch"],
+        "merger": ["merge", "combine"],
+        "scanner": ["scanner"],
+        "destroys_ore": ["destroy", "void", "disintegrat"],
+        "randomized": ["chance", "random", "rng", "occasionally", "sometimes"],
+        "speed_modifier": ["conveyor speed", "speed up", "faster", "slower"],
+        "size_modifier": ["ore size", "shrinks ore", "grows ore", "enlarges ore"],
+        "directional": ["from behind", "from the side", "from above", "front"],
+    },
+    "synergy_keywords": {
+        "works_with": ["works with", "paired with", "pairs with", "synergy", "synergizes"],
+        "combo": ["combo", "combination"],
+        "requires_condition": ["if ore is", "when ore is", "requires", "only if"],
+        "excludes_condition": ["unless", "except", "cannot", "cant"],
+        "resetter_related": ["reset", "tesla"],
+    },
+    "exclude_keywords": {
+        "fire": ["firework"],
+    },
+}
 
 
-def parse_wiki_page(page: WikiPage, preferred_type: str | None = None) -> dict[str, Any]:
+def _normalize_rule_map(section: Any) -> dict[str, list[str]]:
+    if not isinstance(section, dict):
+        return {}
+    normalized_section: dict[str, list[str]] = {}
+    for raw_name, raw_values in section.items():
+        if not isinstance(raw_name, str):
+            continue
+        name = normalize_lookup(raw_name)
+        if not name:
+            continue
+
+        values: list[str] = []
+        if isinstance(raw_values, list):
+            for value in raw_values:
+                if not isinstance(value, str):
+                    continue
+                token = normalize_lookup(value)
+                if token:
+                    values.append(token)
+        elif isinstance(raw_values, str):
+            token = normalize_lookup(raw_values)
+            if token:
+                values.append(token)
+
+        if values:
+            deduped = sorted(set(values))
+            normalized_section[name] = deduped
+    return normalized_section
+
+
+def _load_effect_rules() -> tuple[dict[str, dict[str, list[str]]], str]:
+    payload: dict[str, Any] = dict(_DEFAULT_EFFECT_RULES)
+    try:
+        raw = json.loads(_EFFECT_RULES_PATH.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            payload = {**payload, **raw}
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    normalized: dict[str, dict[str, list[str]]] = {}
+    for key in _RULE_KEYS:
+        normalized[key] = _normalize_rule_map(payload.get(key))
+
+    version = str(payload.get("version") or _DEFAULT_EFFECT_RULES["version"])
+    return normalized, version
+
+
+_EFFECT_RULES, _EFFECT_RULESET_VERSION = _load_effect_rules()
+
+
+def parse_wiki_page(
+    page: WikiPage,
+    preferred_type: str | None = None,
+    known_titles: dict[str, str] | None = None,
+) -> dict[str, Any]:
     code = mwparserfromhell.parse(page.content)
     infobox_raw = _extract_infobox_params(code)
     infobox_clean = {key: clean_wikitext(value) for key, value in infobox_raw.items()}
+    known_titles = known_titles or {}
 
     categories = _extract_categories(page.content)
     item_type = _infer_item_type(categories, preferred_type)
@@ -64,6 +159,8 @@ def parse_wiki_page(page: WikiPage, preferred_type: str | None = None) -> dict[s
     tags = {key: value for key, value in tags.items() if value not in (None, "")}
 
     effect_tags = _extract_effect_tags(effects_text, drawbacks_text, overview_text, categories)
+    effects = _extract_effect_profile(effects_text, drawbacks_text, overview_text)
+    synergies = _extract_synergies(page, infobox_raw, effects_text, drawbacks_text, overview_text, known_titles)
     proof_and_limits = {
         "reborn_proof": tags.get("reborn_proof"),
         "sacrifice_proof": tags.get("sacrifice_proof"),
@@ -104,6 +201,8 @@ def parse_wiki_page(page: WikiPage, preferred_type: str | None = None) -> dict[s
         "size": size,
         "mpu": mpu,
         "effect_tags": effect_tags,
+        "effects": effects,
+        "synergies": synergies,
         "proof_and_limits": proof_and_limits,
         "acquisition": acquisition,
         "wiki_url": _wiki_url(page.title),
@@ -113,6 +212,7 @@ def parse_wiki_page(page: WikiPage, preferred_type: str | None = None) -> dict[s
             "categories": categories,
             "extra": infobox_clean,
             "multipliers": multipliers,
+            "effect_ruleset": _EFFECT_RULESET_VERSION,
         },
         "metadata": {
             "wiki_title": page.title,
@@ -155,6 +255,14 @@ def _extract_overview(raw: str) -> str:
     if not match:
         return ""
     return clean_wikitext(match.group("body"))
+
+
+def _extract_section_raw(raw: str, section_name: str) -> str:
+    pattern = rf"==\s*{re.escape(section_name)}\s*==(?P<body>.*?)(\n==[^=].*?==|\Z)"
+    match = re.search(pattern, raw, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    return match.group("body").strip()
 
 
 def _extract_categories(raw: str) -> list[str]:
@@ -314,6 +422,142 @@ def _extract_effect_tags(effects: str, drawbacks: str, overview: str, categories
         "scanner": "scanner" in joined,
     }
     return {key: value for key, value in tags.items() if value}
+
+
+def _extract_effect_profile(effects: str, drawbacks: str, overview: str) -> dict[str, Any]:
+    combined = " ".join(part for part in [effects, drawbacks, overview] if part)
+    normalized = normalize_lookup(combined)
+
+    inflicts = _collect_rule_hits(
+        normalized,
+        _EFFECT_RULES.get("status_effects", {}),
+        _EFFECT_RULES.get("exclude_keywords", {}),
+    )
+    behavior = _collect_rule_hits(
+        normalized,
+        _EFFECT_RULES.get("behaviors", {}),
+        _EFFECT_RULES.get("exclude_keywords", {}),
+    )
+    x_values = extract_x_values(combined)
+
+    profile: dict[str, Any] = {}
+    if inflicts:
+        profile["status_effects"] = inflicts
+    if behavior:
+        profile["behaviors"] = behavior
+    if x_values:
+        profile["x_values"] = x_values
+    profile["ruleset_version"] = _EFFECT_RULESET_VERSION
+    return profile
+
+
+def _extract_synergies(
+    page: WikiPage,
+    infobox_raw: dict[str, str],
+    effects: str,
+    drawbacks: str,
+    overview: str,
+    known_titles: dict[str, str] | None,
+) -> dict[str, Any]:
+    title_map = known_titles or {}
+    sections = [
+        ("effects", infobox_raw.get("effects", "")),
+        ("drawbacks", infobox_raw.get("drawbacks", "")),
+        ("related_items", infobox_raw.get("related_items", "")),
+        ("other_notes", infobox_raw.get("other_notes", "")),
+        ("overview", _extract_section_raw(page.content, "Overview")),
+        ("how_to_use", _extract_section_raw(page.content, "How to Use")),
+        ("tips", _extract_section_raw(page.content, "Tips")),
+    ]
+
+    self_norm = normalize_lookup(page.title)
+    related: list[dict[str, str]] = []
+    seen_norms: set[str] = {self_norm}
+
+    for source_name, raw_fragment in sections:
+        if not raw_fragment:
+            continue
+        for title in _extract_link_titles(raw_fragment):
+            normalized = normalize_lookup(title)
+            if not normalized or normalized in seen_norms:
+                continue
+            if title_map and normalized not in title_map:
+                continue
+            seen_norms.add(normalized)
+            related.append(
+                {
+                    "name": title_map.get(normalized, title),
+                    "normalized_name": normalized,
+                    "source": source_name,
+                }
+            )
+
+    joined = normalize_lookup(" ".join(part for part in [effects, drawbacks, overview] if part))
+    keywords = _collect_rule_hits(
+        joined,
+        _EFFECT_RULES.get("synergy_keywords", {}),
+        _EFFECT_RULES.get("exclude_keywords", {}),
+    )
+
+    synergies: dict[str, Any] = {}
+    if related:
+        synergies["related_items"] = related
+    if keywords:
+        synergies["keywords"] = keywords
+    return synergies
+
+
+def _extract_link_titles(raw_fragment: str) -> list[str]:
+    try:
+        code = mwparserfromhell.parse(raw_fragment)
+    except Exception:
+        return []
+
+    blocked_prefixes = {"category", "file", "image", "template", "help", "special", "module"}
+    titles: list[str] = []
+    seen: set[str] = set()
+    for link in code.filter_wikilinks(recursive=True):
+        target = clean_wikitext(str(link.title)).strip().lstrip(":")
+        if not target:
+            continue
+        prefix = target.split(":", 1)[0].strip().lower()
+        if ":" in target and prefix in blocked_prefixes:
+            continue
+        title = target.replace("_", " ").strip()
+        key = normalize_lookup(title)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        titles.append(title)
+    return titles
+
+
+def _contains_rule_term(text: str, term: str) -> bool:
+    if not text or not term:
+        return False
+    parts = [re.escape(part) for part in term.split() if part]
+    if not parts:
+        return False
+    pattern = r"\b" + r"\s+".join(parts) + r"\b"
+    return re.search(pattern, text) is not None
+
+
+def _collect_rule_hits(
+    text: str,
+    rules: dict[str, list[str]],
+    excluded: dict[str, list[str]],
+) -> list[str]:
+    hits: list[str] = []
+    for rule_name, terms in rules.items():
+        if not terms:
+            continue
+        if not any(_contains_rule_term(text, term) for term in terms):
+            continue
+        blocked_terms = excluded.get(rule_name, [])
+        if blocked_terms and any(_contains_rule_term(text, blocked) for blocked in blocked_terms):
+            continue
+        hits.append(rule_name)
+    return sorted(hits)
 
 
 def _detect_can_reset(upgrade_limit_raw: str) -> bool:

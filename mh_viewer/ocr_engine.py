@@ -45,8 +45,8 @@ class OcrEngine:
 
         config = f"--oem 3 --psm {psm}"
         if whitelist:
-            safe_whitelist = whitelist.replace('"', "")
-            config += f' -c tessedit_char_whitelist="{safe_whitelist}"'
+            safe_whitelist = whitelist.replace('"', "").replace(" ", "")
+            config += f" -c tessedit_char_whitelist={safe_whitelist}"
 
         best = _ocr_with_config(processed, config)
         if _good_enough(best):

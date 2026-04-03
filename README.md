@@ -14,11 +14,14 @@ Desktop companion viewer for Miners Haven that reads hovered inventory item name
 ## Captured data
 
 - Core: name, type, tier, description, how-to-use, multiplier, size, MPU, wiki URL
+- Extended: extracted `effects` profile and `synergies` links/keywords for planning algorithms
 - Details:
   - elements (raw and named)
   - proof and limits (reborn proof, sacrifice proof, upgrade limit/counter, can reset)
   - acquisition info
   - effect tags
+  - parsed effects profile (status effects, mechanics, x-values)
+  - parsed synergies (related items + synergy keywords)
   - aliases/normalized name
   - raw infobox fields (future-proof)
   - metadata (pageid, revid, sync timestamps, parser version)

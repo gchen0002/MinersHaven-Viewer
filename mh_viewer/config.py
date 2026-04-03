@@ -33,6 +33,7 @@ class AppConfig:
     debug_mode: bool
     warmup_cycles: int
     tesseract_cmd: str | None
+    multi_region_scan: bool
 
 
 def default_config() -> AppConfig:
@@ -50,6 +51,7 @@ def default_config() -> AppConfig:
         debug_mode=True,
         warmup_cycles=2,
         tesseract_cmd=None,
+        multi_region_scan=True,
     )
 
 
@@ -85,6 +87,7 @@ def load_config(path: Path | None = None) -> AppConfig:
         debug_mode=bool(raw.get("debug_mode", defaults.debug_mode)),
         warmup_cycles=int(raw.get("warmup_cycles", defaults.warmup_cycles)),
         tesseract_cmd=raw.get("tesseract_cmd"),
+        multi_region_scan=bool(raw.get("multi_region_scan", defaults.multi_region_scan)),
     )
 
 

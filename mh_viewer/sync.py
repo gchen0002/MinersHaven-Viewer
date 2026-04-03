@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from .cache import CacheStore, build_index
 from .utils import normalize_lookup
 from .wiki_client import WikiClient
-from .wiki_parser import parse_wiki_page
+from .wiki_parser import PARSER_VERSION, parse_wiki_page
 
 
 DEFAULT_CATEGORIES = {
@@ -37,7 +37,9 @@ class WikiSyncService:
         titles = sorted(titles_with_types.keys())
         current_revision_map = self.wiki.get_revision_map(titles)
 
-        run_full_scan = force_full or not items
+        parser_changed = snapshot.meta.get("parser_version") != PARSER_VERSION
+        run_full_scan = force_full or not items or parser_changed
+        known_titles = {normalize_lookup(title): title for title in titles}
         stale_titles: list[str] = []
         if run_full_scan:
             stale_titles = titles
@@ -52,7 +54,7 @@ class WikiSyncService:
             pages = self.wiki.get_pages_wikitext(stale_titles)
             for page in pages:
                 item_type = titles_with_types.get(page.title)
-                parsed = parse_wiki_page(page, preferred_type=item_type)
+                parsed = parse_wiki_page(page, preferred_type=item_type, known_titles=known_titles)
                 normalized = normalize_lookup(page.title)
                 items[normalized] = parsed
 
@@ -72,6 +74,7 @@ class WikiSyncService:
             {
                 "revision_map": revision_map,
                 "categories": list(DEFAULT_CATEGORIES.keys()),
+                "parser_version": PARSER_VERSION,
                 "last_sync": datetime.now(tz=timezone.utc).isoformat(),
             }
         )

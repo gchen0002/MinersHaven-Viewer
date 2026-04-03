@@ -1,0 +1,144 @@
+{
+  "version": "2026-04-03.1",
+  "status_effects": {
+    "fire": [
+      "fire",
+      "burn",
+      "burning",
+      "ignite"
+    ],
+    "frost": [
+      "frost",
+      "frozen",
+      "freeze",
+      "frostbite",
+      "chill"
+    ],
+    "poison": [
+      "poison",
+      "poisoned",
+      "toxic"
+    ],
+    "radioactive": [
+      "radioactive",
+      "radiation",
+      "irradiat"
+    ],
+    "wet": [
+      "wet",
+      "waterlogged",
+      "soaked"
+    ],
+    "shield": [
+      "shield",
+      "shielded",
+      "protected"
+    ],
+    "anti_gravity": [
+      "anti gravity",
+      "antigravity",
+      "floating"
+    ],
+    "neon": [
+      "neon"
+    ]
+  },
+  "behaviors": {
+    "resetter": [
+      "reset",
+      "resetting",
+      "tesla",
+      "upgrade count",
+      "upgrade counter"
+    ],
+    "teleporter": [
+      "teleport",
+      "portal",
+      "warp"
+    ],
+    "splitter": [
+      "split",
+      "branch",
+      "fork"
+    ],
+    "merger": [
+      "merge",
+      "combine"
+    ],
+    "scanner": [
+      "scanner"
+    ],
+    "destroys_ore": [
+      "destroy",
+      "void",
+      "disintegrat",
+      "erase ore"
+    ],
+    "randomized": [
+      "chance",
+      "random",
+      "rng",
+      "occasionally",
+      "sometimes"
+    ],
+    "speed_modifier": [
+      "conveyor speed",
+      "speed up",
+      "faster",
+      "slower"
+    ],
+    "size_modifier": [
+      "ore size",
+      "shrinks ore",
+      "grows ore",
+      "enlarges ore",
+      "larger ore",
+      "smaller ore"
+    ],
+    "directional": [
+      "from behind",
+      "from the side",
+      "from above",
+      "front"
+    ]
+  },
+  "synergy_keywords": {
+    "works_with": [
+      "works with",
+      "paired with",
+      "pairs with",
+      "synergy",
+      "synergizes"
+    ],
+    "combo": [
+      "combo",
+      "combination"
+    ],
+    "requires_condition": [
+      "if ore is",
+      "when ore is",
+      "requires",
+      "only if"
+    ],
+    "excludes_condition": [
+      "unless",
+      "except",
+      "cannot",
+      "cant"
+    ],
+    "resetter_related": [
+      "reset",
+      "tesla"
+    ],
+    "speed_related": [
+      "speed",
+      "drop rate",
+      "throughput"
+    ]
+  },
+  "exclude_keywords": {
+    "fire": [
+      "firework"
+    ]
+  }
+}

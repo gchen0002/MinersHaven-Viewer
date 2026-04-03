@@ -3,8 +3,9 @@
     "Category:Upgrader",
     "Category:Furnace"
   ],
-  "last_full_scan": "2026-04-01T20:58:37.104764+00:00",
-  "last_sync": "2026-04-01T20:58:37.104764+00:00",
+  "last_full_scan": "2026-04-03T06:09:39.654380+00:00",
+  "last_sync": "2026-04-03T06:09:39.654380+00:00",
+  "parser_version": "1.1.0",
   "revision_map": {
     "100M Upgrader": 313720,
     "Abominable Screaming Tree": 319303,
@@ -722,5 +723,5 @@
     "Witch's Cauldron": 323000,
     "Yuge Furnace": 315241
   },
-  "updated_at": "2026-04-01T20:58:37.104764+00:00"
+  "updated_at": "2026-04-03T06:09:39.654380+00:00"
 }
