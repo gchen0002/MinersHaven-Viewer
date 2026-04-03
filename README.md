@@ -1,19 +1,20 @@
-# Miners Haven Hover Viewer
+# Miners Haven Hover Viewer + Optimizer
 
-Desktop companion viewer for Miners Haven that reads hovered inventory item names with OCR, matches against a local wiki cache, and shows useful item info in a top-right panel.
+Desktop companion for Miners Haven with two tools: an OCR hover viewer for inventory items, and a layout optimizer planner that estimates money/sec and time-to-target from your inventory.
 
 ## Features
 
-- Full wiki sync for `Category:Upgrader` and `Category:Furnace`
+- Full wiki sync for `Category:Upgrader`, `Category:Furnace`, `Category:Dropper`, and `Category:Mine`
 - Permanent JSON cache (`data/items.json`, `data/index.json`, `data/meta.json`)
 - Incremental refresh using wiki revision IDs
 - Hold-key trigger (`left alt` by default)
 - Inventory-mode gate via OCR keyword detection (optional, disabled by default)
 - Top-right viewer with core info plus a `More Details` section
+- Optimizer planner with legality-aware chain simulation (resetters, teleporters, split/merge, destroy effects)
 
 ## Captured data
 
-- Core: name, type, tier, description, how-to-use, multiplier, size, MPU, wiki URL
+- Core: name, type, tier, description, how-to-use, multiplier, size, MPU, drop rate, ore worth, wiki URL
 - Extended: extracted `effects` profile and `synergies` links/keywords for planning algorithms
 - Details:
   - elements (raw and named)
@@ -22,6 +23,9 @@ Desktop companion viewer for Miners Haven that reads hovered inventory item name
   - effect tags
   - parsed effects profile (status effects, mechanics, x-values)
   - parsed synergies (related items + synergy keywords)
+  - rules-driven extraction powered by `mh_viewer/effect_rules.json`
+  - ore worth normalization (`kind=static|range|dynamic`, confidence, parsed values)
+  - throughput profile (`ores_per_second`, value/sec estimates, throughput multipliers)
   - aliases/normalized name
   - raw infobox fields (future-proof)
   - metadata (pageid, revid, sync timestamps, parser version)
@@ -37,15 +41,43 @@ You also need the Tesseract OCR engine installed on Windows.
 - Download and install Tesseract (usually installs to `C:\Program Files\Tesseract-OCR\tesseract.exe`)
 - If needed, set `tesseract_cmd` in `config.json`
 
-## First sync
+## Setup Optimizer
+
+### 1. Sync wiki cache
 
 ```bash
 python -m mh_viewer.app --sync-only --full
 ```
 
-This performs the full upgrader + furnace scan and writes cache files in `data/`.
+This downloads all upgraders, furnaces, droppers, and mines with parsed effects, synergies, drop rates, ore worth, and throughput profiles.
 
-## Run viewer
+### 2. Launch planner calculator UI
+
+```bash
+python -m mh_viewer.app --planner
+```
+
+### 3. Paste your inventory
+
+Paste items into the left text box. Supported formats:
+
+- `King Gold Mine x1`
+- `Ore Illuminator x5`
+- `3x Newtonium Mine`
+
+### 4. Choose mode and calculate
+
+- **Money/sec**: estimate fastest steady income
+- **Time-to-target**: estimate ETA from 0 cash to targets like `7 de`
+
+Adjust controls:
+
+- `Max mines`: auto-select top 1-3 mines from your inventory
+- `Loop cap`: resetter loop passes used by the calculator (default 4)
+
+Click **Calculate** to see selected mines, upgrader chain, bottleneck diagnostics, and ETA.
+
+## Run hover viewer
 
 ```bash
 python -m mh_viewer.app

@@ -22,11 +22,54 @@ from .utils import (
 from .wiki_client import WikiPage
 
 
-PARSER_VERSION = "1.2.0"
+PARSER_VERSION = "1.4.1"
 ELEMENT_NAMES = ["aether", "water", "earth", "fire", "order", "entropy"]
 SIZE_CATEGORIES = ["tiny", "small", "medium", "large", "huge"]
 _EFFECT_RULES_PATH = Path(__file__).with_name("effect_rules.json")
 _RULE_KEYS = ("status_effects", "behaviors", "synergy_keywords", "exclude_keywords")
+_CASH_UNIT_ORDER = [
+    "",
+    "k",
+    "m",
+    "b",
+    "t",
+    "qd",
+    "qn",
+    "sx",
+    "sp",
+    "oc",
+    "no",
+    "de",
+    "ud",
+    "dd",
+    "td",
+    "qad",
+    "qid",
+    "sxd",
+    "spd",
+    "od",
+    "nd",
+    "vg",
+    "uvg",
+    "dvg",
+]
+_CASH_UNIT_RANK = {unit: index for index, unit in enumerate(_CASH_UNIT_ORDER)}
+_CASH_UNIT_ALIASES = {
+    "qa": "qd",
+    "qi": "qn",
+    "dc": "de",
+}
+_PLACEHOLDER_ORE_WORTH = {
+    "",
+    "-",
+    "to",
+    "(?)",
+    "(?",
+    "?)",
+    "to (up to )",
+    "initially max",
+    "highest (?) lowest (?)",
+}
 
 _DEFAULT_EFFECT_RULES: dict[str, Any] = {
     "version": "builtin-1",
@@ -72,7 +115,7 @@ def _normalize_rule_map(section: Any) -> dict[str, list[str]]:
     for raw_name, raw_values in section.items():
         if not isinstance(raw_name, str):
             continue
-        name = normalize_lookup(raw_name)
+        name = normalize_lookup(raw_name).replace(" ", "_")
         if not name:
             continue
 
@@ -138,6 +181,17 @@ def parse_wiki_page(
     size = _parse_size(infobox_raw.get("item_size"), categories)
     multiplier = _parse_primary_multiplier(effects_text)
     mpu = _parse_mpu(infobox_clean.get("multiplier_length", ""))
+    drop_rate = _parse_drop_rate(infobox_clean.get("drop_rate", ""))
+    conveyor_speed = _parse_conveyor_speed(infobox_clean.get("conveyor_speed", ""))
+    ore_worth = _parse_ore_worth(
+        infobox_raw.get("ore_worth", ""),
+        fallback_texts=[
+            infobox_raw.get("old_value", ""),
+            infobox_raw.get("effects", ""),
+            infobox_raw.get("other_notes", ""),
+        ],
+    )
+    throughput_profile = _build_throughput_profile(item_type, drop_rate, conveyor_speed, ore_worth)
     elements = _parse_elements(infobox_raw.get("elements", ""))
 
     tags = {
@@ -200,6 +254,10 @@ def parse_wiki_page(
         "multiplier": multiplier,
         "size": size,
         "mpu": mpu,
+        "drop_rate": drop_rate,
+        "conveyor_speed": conveyor_speed,
+        "ore_worth": ore_worth,
+        "throughput_profile": throughput_profile,
         "effect_tags": effect_tags,
         "effects": effects,
         "synergies": synergies,
@@ -377,6 +435,431 @@ def _parse_mpu(raw_value: str) -> dict[str, Any] | None:
         return {"text": raw_value, "value": None}
     text, value = parsed
     return {"text": text, "value": value}
+
+
+def _parse_drop_rate(raw_value: str) -> dict[str, Any] | None:
+    cleaned = clean_wikitext(raw_value)
+    if not cleaned:
+        return None
+
+    normalized = re.sub(r"\s+", " ", cleaned).strip().lower()
+
+    if "per mine" in normalized or any(token in normalized for token in ["depends", "random", "exception"]):
+        return {"text": cleaned, "kind": "dynamic", "per_second": None, "confidence": 0.3}
+
+    ore_over_time = re.search(
+        r"([0-9]+(?:\.[0-9]+)?)\s*ores?\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|secs|second|seconds)\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if ore_over_time:
+        ore_count = float(ore_over_time.group(1))
+        seconds = float(ore_over_time.group(2))
+        if seconds > 0:
+            return {
+                "text": cleaned,
+                "kind": "static",
+                "per_second": round(ore_count / seconds, 4),
+                "confidence": 0.95,
+            }
+
+    ore_every = re.search(
+        r"([0-9]+(?:\.[0-9]+)?)\s*ores?\s*every\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|sec|secs|second|seconds)\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if ore_every:
+        ore_count = float(ore_every.group(1))
+        seconds = float(ore_every.group(2))
+        if seconds > 0:
+            return {
+                "text": cleaned,
+                "kind": "static",
+                "per_second": round(ore_count / seconds, 4),
+                "confidence": 0.95,
+            }
+
+    direct = re.search(
+        r"([0-9]+(?:\.[0-9]+)?)\s*(?:ores?\s*)?(?:/|per\s*)(?:s|sec|secs|second|seconds)\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if direct:
+        value = float(direct.group(1))
+        return {
+            "text": cleaned,
+            "kind": "static",
+            "per_second": value,
+            "confidence": 0.85,
+        }
+
+    if any(token in normalized for token in ["/s", " per s", "per second", "sec", "second"]):
+        single = re.search(r"([0-9]+(?:\.[0-9]+)?)", cleaned)
+        if single:
+            value = float(single.group(1))
+            return {
+                "text": cleaned,
+                "kind": "static",
+                "per_second": value,
+                "confidence": 0.6,
+            }
+
+    return {"text": cleaned, "kind": "unknown", "per_second": None, "confidence": 0.0}
+
+
+def _parse_conveyor_speed(raw_value: str) -> dict[str, Any] | None:
+    cleaned = clean_wikitext(raw_value)
+    if not cleaned:
+        return None
+
+    normalized = normalize_lookup(cleaned)
+    percents = [float(match) for match in re.findall(r"([0-9]+(?:\.[0-9]+)?)\s*%", cleaned)]
+    if not percents:
+        return {"text": cleaned, "kind": "unknown", "confidence": 0.0}
+
+    has_range_hints = any(token in normalized for token in ["to", "before", "after", "inactive", "active", "-", "/", "depends"])
+    if len(percents) >= 2 or has_range_hints:
+        min_percent = min(percents)
+        max_percent = max(percents)
+        return {
+            "text": cleaned,
+            "kind": "range",
+            "min_percent": min_percent,
+            "max_percent": max_percent,
+            "min_multiplier": round(min_percent / 100.0, 4),
+            "max_multiplier": round(max_percent / 100.0, 4),
+            "confidence": 0.8,
+        }
+
+    percent = percents[0]
+    return {
+        "text": cleaned,
+        "kind": "static",
+        "percent": percent,
+        "multiplier": round(percent / 100.0, 4),
+        "confidence": 0.95,
+    }
+
+
+def _build_throughput_profile(
+    item_type: str | None,
+    drop_rate: dict[str, Any] | None,
+    conveyor_speed: dict[str, Any] | None,
+    ore_worth: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    profile: dict[str, Any] = {}
+    kind = normalize_lookup(item_type or "")
+
+    if kind == "dropper" and drop_rate:
+        ores_per_second = _to_float(drop_rate.get("per_second"))
+        if ores_per_second is not None:
+            profile["ores_per_second"] = ores_per_second
+
+        if ore_worth:
+            worth_kind = str(ore_worth.get("kind") or "")
+            if worth_kind == "static":
+                value = _to_float(ore_worth.get("value"))
+                if value is not None:
+                    profile["base_ore_value"] = value
+                    if ores_per_second is not None:
+                        profile["estimated_value_per_second"] = round(ores_per_second * value, 4)
+            elif worth_kind == "range":
+                min_value = _to_float(ore_worth.get("min_value"))
+                max_value = _to_float(ore_worth.get("max_value"))
+                if min_value is not None:
+                    profile["base_ore_value_min"] = min_value
+                if max_value is not None:
+                    profile["base_ore_value_max"] = max_value
+                if ores_per_second is not None and min_value is not None:
+                    profile["estimated_value_per_second_min"] = round(ores_per_second * min_value, 4)
+                if ores_per_second is not None and max_value is not None:
+                    profile["estimated_value_per_second_max"] = round(ores_per_second * max_value, 4)
+
+    if kind in {"upgrader", "furnace", "utility", "dropper"} and conveyor_speed:
+        speed_kind = str(conveyor_speed.get("kind") or "")
+        if speed_kind == "static":
+            mult = _to_float(conveyor_speed.get("multiplier"))
+            if mult is not None:
+                profile["throughput_multiplier"] = mult
+        elif speed_kind == "range":
+            min_mult = _to_float(conveyor_speed.get("min_multiplier"))
+            max_mult = _to_float(conveyor_speed.get("max_multiplier"))
+            if min_mult is not None:
+                profile["throughput_multiplier_min"] = min_mult
+            if max_mult is not None:
+                profile["throughput_multiplier_max"] = max_mult
+
+    if not profile:
+        return None
+    profile["computed_from"] = {
+        "drop_rate": bool(drop_rate),
+        "ore_worth": bool(ore_worth),
+        "conveyor_speed": bool(conveyor_speed),
+    }
+    return profile
+
+
+def _to_float(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_ore_worth(raw_value: str, fallback_texts: list[str] | None = None) -> dict[str, Any] | None:
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return None
+
+    cleaned = clean_wikitext(raw)
+    display_text = cleaned or raw
+
+    template_values: list[dict[str, Any]] = []
+    for template_match in re.finditer(r"\{\{\s*money\s*\|\s*([^}]+)\}\}", raw, flags=re.IGNORECASE):
+        template_values.extend(_extract_money_values(template_match.group(1)))
+
+    raw_norm = normalize_lookup(raw)
+
+    if template_values and any(token in raw_norm for token in ["initially", "max", "highest", "lowest", "up to"]):
+        ordered = sorted(template_values, key=lambda item: item["base_value"])
+        return {
+            "text": display_text,
+            "kind": "range",
+            "min_value": ordered[0]["base_value"],
+            "max_value": ordered[-1]["base_value"],
+            "min_display": ordered[0]["display"],
+            "max_display": ordered[-1]["display"],
+            "confidence": 0.75,
+            "source": "template_mixed",
+        }
+
+    if template_values and _looks_like_pure_money_template(raw):
+        if len(template_values) >= 2:
+            ordered = sorted(template_values, key=lambda item: item["base_value"])
+            min_value = ordered[0]
+            max_value = ordered[-1]
+            return {
+                "text": display_text,
+                "kind": "range",
+                "min_value": min_value["base_value"],
+                "max_value": max_value["base_value"],
+                "min_display": min_value["display"],
+                "max_display": max_value["display"],
+                "confidence": 0.99,
+            }
+
+        best = max(template_values, key=lambda item: item["base_value"])
+        return {
+            "text": best["display"] if not cleaned else cleaned,
+            "kind": "static",
+            "value": best["base_value"],
+            "display": best["display"],
+            "unit": best["unit"],
+            "confidence": 0.99,
+        }
+
+    normalized = normalize_lookup(display_text)
+    normalized_compact = normalized.replace(" ", "")
+    fallback_texts = fallback_texts or []
+    context = " ".join(clean_wikitext(part) for part in fallback_texts if part)
+    context_norm = normalize_lookup(context)
+
+    if normalized in _PLACEHOLDER_ORE_WORTH or normalized_compact in _PLACEHOLDER_ORE_WORTH:
+        return {
+            "text": display_text,
+            "kind": "unknown",
+            "confidence": 0.0,
+        }
+
+    if "highest value" in normalized and "destroy" in normalized:
+        return {
+            "text": display_text,
+            "kind": "dynamic",
+            "confidence": 0.35,
+            "variables": ["highest_value_destroyed_ore"],
+        }
+
+    if "initially" in normalized and "max" in normalized and not template_values:
+        guess_values = _extract_money_values(context)
+        if len(guess_values) >= 2:
+            ordered = sorted(guess_values, key=lambda item: item["base_value"])
+            return {
+                "text": display_text,
+                "kind": "range",
+                "min_value": ordered[0]["base_value"],
+                "max_value": ordered[-1]["base_value"],
+                "min_display": ordered[0]["display"],
+                "max_display": ordered[-1]["display"],
+                "confidence": 0.55,
+                "source": "fallback_context",
+            }
+        return {
+            "text": display_text,
+            "kind": "dynamic",
+            "confidence": 0.2,
+            "variables": ["initial_value", "max_value"],
+        }
+
+    money_values = _extract_money_values(" ".join([raw, display_text]))
+    if template_values:
+        money_values.extend(template_values)
+
+    deduped_money: list[dict[str, Any]] = []
+    seen_money: set[tuple[int, int]] = set()
+    for entry in money_values:
+        signature = (entry.get("rank", 0), int(round(float(entry.get("amount", 0.0)) * 1000)))
+        if signature in seen_money:
+            continue
+        seen_money.add(signature)
+        deduped_money.append(entry)
+    money_values = deduped_money
+
+    dynamic_terms = [
+        "depends",
+        "based on",
+        "highest",
+        "lowest",
+        "up to",
+        "secondsonbase",
+        "player life",
+        "number of",
+        "raw",
+        "initially",
+        "max",
+        "min",
+    ]
+    has_extra_formula_text = not _looks_like_pure_money_template(raw) and bool(re.search(r"[a-z]", normalize_lookup(raw)))
+    is_dynamic = any(term in normalized for term in dynamic_terms) or has_extra_formula_text
+
+    # Parse explicit ranges like "1k to 5k" or "highest: 5de lowest: 1de"
+    if len(money_values) >= 2 and (
+        " to " in normalized or "highest" in normalized or "lowest" in normalized or "up to" in normalized
+    ):
+        ordered = sorted(money_values, key=lambda item: item["base_value"])
+        min_value = ordered[0]
+        max_value = ordered[-1]
+        return {
+            "text": cleaned,
+            "kind": "range",
+            "min_value": min_value["base_value"],
+            "max_value": max_value["base_value"],
+            "min_display": min_value["display"],
+            "max_display": max_value["display"],
+            "confidence": 0.85,
+        }
+
+    if money_values and not is_dynamic:
+        best = max(money_values, key=lambda item: item["base_value"])
+        return {
+            "text": display_text,
+            "kind": "static",
+            "value": best["base_value"],
+            "display": best["display"],
+            "unit": best["unit"],
+            "confidence": 0.95,
+        }
+
+    x_values = extract_x_values(" ".join([display_text, context]))
+    relative_keywords = ["raw", "player life", "number of", "depends", "based on", "secondsonbase"]
+    if any(token in normalized for token in relative_keywords) or "depends" in context_norm:
+        payload: dict[str, Any] = {
+            "text": display_text,
+            "kind": "dynamic",
+            "confidence": 0.4,
+        }
+        if x_values:
+            payload["x_values"] = x_values
+        variables = _extract_symbolic_tokens(cleaned)
+        if variables:
+            payload["variables"] = variables
+        return payload
+
+    if money_values:
+        best = max(money_values, key=lambda item: item["base_value"])
+        return {
+            "text": display_text,
+            "kind": "static",
+            "value": best["base_value"],
+            "display": best["display"],
+            "unit": best["unit"],
+            "confidence": 0.7,
+        }
+
+    payload = {
+        "text": display_text,
+        "kind": "unknown",
+        "confidence": 0.1,
+    }
+    if x_values:
+        payload["x_values"] = x_values
+    return payload
+
+
+def _extract_money_values(text: str) -> list[dict[str, Any]]:
+    cleaned = str(text).lower().replace(",", "")
+    values: list[dict[str, Any]] = []
+    for match in re.finditer(r"\$?\s*([0-9]+(?:\.[0-9]+)?)\s*([a-z]{0,4})", cleaned):
+        amount = float(match.group(1))
+        unit = normalize_lookup(match.group(2)).replace(" ", "")
+        unit = _CASH_UNIT_ALIASES.get(unit, unit)
+        if unit not in _CASH_UNIT_RANK:
+            if unit:
+                continue
+        rank = _CASH_UNIT_RANK.get(unit, 0)
+        base_value = amount * (1000**rank)
+        display = f"{amount:g}{unit}" if unit else f"{amount:g}"
+        values.append(
+            {
+                "amount": amount,
+                "unit": unit,
+                "rank": rank,
+                "base_value": base_value,
+                "display": display,
+            }
+        )
+    return values
+
+
+def _looks_like_pure_money_template(raw_text: str) -> bool:
+    stripped = str(raw_text or "").strip()
+    if not stripped:
+        return False
+    without_templates = re.sub(r"\{\{\s*money\s*\|[^}]+\}\}", " ", stripped, flags=re.IGNORECASE)
+    normalized_leftovers = normalize_lookup(without_templates)
+    if not normalized_leftovers:
+        return True
+    allowed_leftovers = {"to", "up", "up to", "-", "and", "raw"}
+    return normalized_leftovers in allowed_leftovers
+
+
+def _extract_symbolic_tokens(text: str) -> list[str]:
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", text)
+    blocked = {
+        "ore",
+        "value",
+        "highest",
+        "lowest",
+        "initially",
+        "player",
+        "life",
+        "number",
+        "raw",
+        "max",
+        "min",
+    }
+    out: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        key = normalize_lookup(token).replace(" ", "")
+        if not key or key in blocked or key.isdigit() or key in seen:
+            continue
+        seen.add(key)
+        out.append(token)
+    return out
 
 
 def _parse_elements(raw_value: str) -> dict[str, Any] | None:

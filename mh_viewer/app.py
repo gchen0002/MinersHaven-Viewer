@@ -32,6 +32,12 @@ def run() -> None:
     parser = _build_arg_parser()
     args = parser.parse_args()
 
+    if args.planner:
+        from .planner_app import run as run_planner
+
+        run_planner()
+        return
+
     cfg = load_config(Path(args.config) if args.config else None)
     store = CacheStore(cfg.cache_dir)
     sync_service = WikiSyncService(store)
@@ -249,6 +255,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sync", action="store_true", help="Sync cache before launching viewer")
     parser.add_argument("--sync-only", action="store_true", help="Only sync cache and exit")
     parser.add_argument("--full", action="store_true", help="Force full refresh from wiki")
+    parser.add_argument("--planner", action="store_true", help="Launch inventory planner calculator UI")
     return parser
 
 

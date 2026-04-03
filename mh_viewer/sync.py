@@ -12,6 +12,8 @@ from .wiki_parser import PARSER_VERSION, parse_wiki_page
 DEFAULT_CATEGORIES = {
     "Category:Upgrader": "Upgrader",
     "Category:Furnace": "Furnace",
+    "Category:Dropper": "Dropper",
+    "Category:Mine": "Dropper",
 }
 
 
