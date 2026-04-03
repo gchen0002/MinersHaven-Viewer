@@ -35,7 +35,17 @@ def run() -> None:
     if args.planner:
         from .planner_app import run as run_planner
 
-        run_planner()
+        planner_argv: list[str] = []
+        if args.sync:
+            planner_argv.append("--sync")
+        if args.sync_only:
+            planner_argv.append("--sync-only")
+        if args.full:
+            planner_argv.append("--full")
+        if args.config:
+            planner_argv.extend(["--config", args.config])
+
+        run_planner(planner_argv)
         return
 
     cfg = load_config(Path(args.config) if args.config else None)

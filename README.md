@@ -65,6 +65,14 @@ Paste items into the left text box. Supported formats:
 - `Ore Illuminator x5`
 - `3x Newtonium Mine`
 
+You can also skip manual paste and use the built-in add flow:
+
+- Type in **Search item** to filter the local item catalog
+- Select a suggestion, choose quantity, then click **Add Selected**
+- Or click **Add Typed** to add exactly what you wrote
+- Adding an existing item now increments that item's quantity instead of creating duplicate lines
+- **Remove Last** and **Clear** help manage the list quickly
+
 ### 4. Choose mode and calculate
 
 - **Money/sec**: estimate fastest steady income
@@ -74,8 +82,26 @@ Adjust controls:
 
 - `Max mines`: auto-select top 1-3 mines from your inventory
 - `Loop cap`: resetter loop passes used by the calculator (default 4)
+- `No destroy items`: excludes ore-destroying items from chain selection
 
 Click **Calculate** to see selected mines, upgrader chain, bottleneck diagnostics, and ETA.
+
+Planner session persistence:
+
+- The planner now auto-saves your inventory input + mode/settings to `data/planner_state.json`
+- State is restored automatically the next time you open `--planner`
+
+Current calculator simulation includes:
+
+- ordered pipeline phases (`pre`, `core`, `post`, `output`)
+- legality-aware chain filtering (resetter/teleporter/split/merge constraints)
+- per-phase throughput floors + topology throughput taxes
+- loop-pass simulation with diminishing returns and MPU caps
+- explicit limiter diagnostics (MPU-constrained vs conveyor-constrained)
+- dimension pressure penalty based on tile usage against base limit (default 62x62 -> 3844 tiles)
+- automatic limiter recommendation (which improvement gives best next gain)
+- cell furnace guardrail: cell furnaces are excluded from upgrader chains (treated as raw-ore-only outputs)
+- early synergy scoring from parsed effects/synergies (works-with, related-item hits, status stacking/conflict penalties)
 
 ## Run hover viewer
 

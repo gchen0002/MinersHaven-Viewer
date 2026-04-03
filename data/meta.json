@@ -5,8 +5,8 @@
     "Category:Dropper",
     "Category:Mine"
   ],
-  "last_full_scan": "2026-04-03T06:34:09.466366+00:00",
-  "last_sync": "2026-04-03T06:34:09.466366+00:00",
+  "last_full_scan": "2026-04-03T06:53:01.848605+00:00",
+  "last_sync": "2026-04-03T06:53:01.848605+00:00",
   "parser_version": "1.4.1",
   "revision_map": {
     "'Ol Faithful": 319406,
@@ -866,5 +866,5 @@
     "Yuntonium Mine": 323001,
     "Yuttrium Mine": 319181
   },
-  "updated_at": "2026-04-03T06:34:09.467369+00:00"
+  "updated_at": "2026-04-03T06:53:01.848605+00:00"
 }
