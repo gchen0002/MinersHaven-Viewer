@@ -84,6 +84,16 @@ Adjust controls:
 - `Loop cap`: resetter loop passes used by the calculator (default 4)
 - `No destroy items`: excludes ore-destroying items from chain selection
 
+Furnace behavior in calculator:
+
+- Cell furnaces are excluded from upgrade-chain simulation (raw-ore-only behavior)
+- Calculator now chooses one explicit furnace candidate for output stage when available
+- Furnace input policy is now parsed and stored (`furnace_input.policy`: `any`, `raw_only`, `upgraded_only`) for deterministic handling
+
+Special chain rules currently modeled:
+
+- `Big Bertha` is treated as first-only and single-use in chain selection
+
 Click **Calculate** to see selected mines, upgrader chain, bottleneck diagnostics, and ETA.
 
 Planner session persistence:
@@ -102,6 +112,25 @@ Current calculator simulation includes:
 - automatic limiter recommendation (which improvement gives best next gain)
 - cell furnace guardrail: cell furnaces are excluded from upgrader chains (treated as raw-ore-only outputs)
 - early synergy scoring from parsed effects/synergies (works-with, related-item hits, status stacking/conflict penalties)
+
+Known multiplier corrections currently hardcoded in calculator overrides:
+
+- `Robotic Enhancer` treated as total `x6` (not naive `x22`)
+- `Obsidian Infusion Device` treated as base `x2` with conditional `x12` when fire condition is met
+
+These are now loaded from `mh_viewer/calculator_overrides.json` (edit this file to tune special-case items without code changes).
+
+Example override fields:
+
+- `base_multiplier`
+- `conditional_fire_multiplier`
+- `overheated_multiplier`
+- `force_applies_fire`
+- `force_extinguishes_fire`
+- `first_only`
+- `max_uses`
+- `disabled` (skip item entirely in calculator)
+- `reason`
 
 ## Run hover viewer
 

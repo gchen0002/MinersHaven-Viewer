@@ -22,7 +22,7 @@ from .utils import (
 from .wiki_client import WikiPage
 
 
-PARSER_VERSION = "1.4.1"
+PARSER_VERSION = "1.5.1"
 ELEMENT_NAMES = ["aether", "water", "earth", "fire", "order", "entropy"]
 SIZE_CATEGORIES = ["tiny", "small", "medium", "large", "huge"]
 _EFFECT_RULES_PATH = Path(__file__).with_name("effect_rules.json")
@@ -70,6 +70,8 @@ _PLACEHOLDER_ORE_WORTH = {
     "initially max",
     "highest (?) lowest (?)",
 }
+_UNMODELED_STATUS_EFFECTS = {"anti_gravity"}
+_UNMODELED_EFFECT_TAGS = {"anti_gravity"}
 
 _DEFAULT_EFFECT_RULES: dict[str, Any] = {
     "version": "builtin-1",
@@ -192,6 +194,13 @@ def parse_wiki_page(
         ],
     )
     throughput_profile = _build_throughput_profile(item_type, drop_rate, conveyor_speed, ore_worth)
+    furnace_input = _parse_furnace_input_policy(
+        item_type=item_type,
+        effects_text=effects_text,
+        drawbacks_text=drawbacks_text,
+        how_to_use_text=how_to_use,
+        overview_text=overview_text,
+    )
     elements = _parse_elements(infobox_raw.get("elements", ""))
 
     tags = {
@@ -258,6 +267,7 @@ def parse_wiki_page(
         "conveyor_speed": conveyor_speed,
         "ore_worth": ore_worth,
         "throughput_profile": throughput_profile,
+        "furnace_input": furnace_input,
         "effect_tags": effect_tags,
         "effects": effects,
         "synergies": synergies,
@@ -271,6 +281,7 @@ def parse_wiki_page(
             "extra": infobox_clean,
             "multipliers": multipliers,
             "effect_ruleset": _EFFECT_RULESET_VERSION,
+            "furnace_input": furnace_input,
         },
         "metadata": {
             "wiki_title": page.title,
@@ -599,6 +610,61 @@ def _build_throughput_profile(
     return profile
 
 
+def _parse_furnace_input_policy(
+    item_type: str | None,
+    effects_text: str,
+    drawbacks_text: str,
+    how_to_use_text: str,
+    overview_text: str,
+) -> dict[str, Any] | None:
+    if normalize_lookup(item_type or "") != "furnace":
+        return None
+
+    combined = " ".join(part for part in [effects_text, drawbacks_text, how_to_use_text, overview_text] if part)
+    normalized = normalize_lookup(combined)
+
+    is_cell_furnace = "cell furnace" in normalized
+    raw_only = any(
+        token in normalized
+        for token in [
+            "only accepts ores directly from droppers",
+            "only accepts ores from droppers",
+            "raw ore",
+            "upgrade counter of 0",
+            "upgrade counter of 0 2 or less",
+            "cannot accept upgraded",
+            "does not accept upgraded",
+        ]
+    )
+
+    upgraded_only = any(
+        token in normalized
+        for token in [
+            "only accepts upgraded",
+            "requires upgraded",
+            "cannot accept raw",
+        ]
+    )
+
+    policy = "any"
+    if raw_only and not upgraded_only:
+        policy = "raw_only"
+    elif upgraded_only and not raw_only:
+        policy = "upgraded_only"
+
+    confidence = 0.5
+    if "only accepts" in normalized or "cannot accept" in normalized or "does not accept" in normalized:
+        confidence = 0.9
+    elif is_cell_furnace:
+        confidence = 0.8
+
+    return {
+        "policy": policy,
+        "is_cell_furnace": is_cell_furnace,
+        "confidence": confidence,
+    }
+
+
 def _to_float(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
@@ -904,7 +970,7 @@ def _extract_effect_tags(effects: str, drawbacks: str, overview: str, categories
         "destroys_ore": "destroy" in joined,
         "scanner": "scanner" in joined,
     }
-    return {key: value for key, value in tags.items() if value}
+    return {key: value for key, value in tags.items() if value and key not in _UNMODELED_EFFECT_TAGS}
 
 
 def _extract_effect_profile(effects: str, drawbacks: str, overview: str) -> dict[str, Any]:
@@ -916,6 +982,7 @@ def _extract_effect_profile(effects: str, drawbacks: str, overview: str) -> dict
         _EFFECT_RULES.get("status_effects", {}),
         _EFFECT_RULES.get("exclude_keywords", {}),
     )
+    inflicts = [token for token in inflicts if token not in _UNMODELED_STATUS_EFFECTS]
     behavior = _collect_rule_hits(
         normalized,
         _EFFECT_RULES.get("behaviors", {}),

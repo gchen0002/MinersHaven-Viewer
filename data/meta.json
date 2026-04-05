@@ -5,9 +5,9 @@
     "Category:Dropper",
     "Category:Mine"
   ],
-  "last_full_scan": "2026-04-03T06:53:01.848605+00:00",
-  "last_sync": "2026-04-03T06:53:01.848605+00:00",
-  "parser_version": "1.4.1",
+  "last_full_scan": "2026-04-03T22:23:29.616976+00:00",
+  "last_sync": "2026-04-03T22:23:29.616976+00:00",
+  "parser_version": "1.5.0",
   "revision_map": {
     "'Ol Faithful": 319406,
     "100M Upgrader": 313720,
@@ -604,7 +604,7 @@
     "Radioactive Refiner": 319010,
     "Radium Mine": 319967,
     "Rainbonite Mine": 319184,
-    "Rainbow Blaster": 323728,
+    "Rainbow Blaster": 323892,
     "Rainbow Refiner": 316986,
     "Rainbow Upgrader": 319012,
     "Raised Furnace": 306514,
@@ -770,6 +770,7 @@
     "The Dream-Maker": 318833,
     "The Dust Devil": 317862,
     "The Easter Shrine": 314033,
+    "The Egg Portal": 323895,
     "The Eternal Overseer": 322534,
     "The Final Upgrader": 319022,
     "The Fissure": 319696,
@@ -832,7 +833,7 @@
     "Vampire Spore": 319925,
     "Vanilla Scanner": 318722,
     "Vaporwave Vibe Visualizer": 317866,
-    "Verdant Pincher": 323692,
+    "Verdant Pincher": 323894,
     "Vesterian Upgrader": 323383,
     "Video Game Digitalizer": 323096,
     "Virtual Enchanter": 297183,
@@ -866,5 +867,5 @@
     "Yuntonium Mine": 323001,
     "Yuttrium Mine": 319181
   },
-  "updated_at": "2026-04-03T06:53:01.848605+00:00"
+  "updated_at": "2026-04-03T22:23:29.616976+00:00"
 }

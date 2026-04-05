@@ -1053,6 +1053,9 @@
     "eerie marsh": [
       "eerie marsh"
     ],
+    "egg portal": [
+      "the egg portal"
+    ],
     "eggcelent upgrader": [
       "eggcelent upgrader"
     ],
@@ -3470,6 +3473,9 @@
     "the easter shrine": [
       "the easter shrine"
     ],
+    "the egg portal": [
+      "the egg portal"
+    ],
     "the eternal overseer": [
       "the eternal overseer"
     ],
@@ -3922,7 +3928,7 @@
       "yuttrium mine"
     ]
   },
-  "generated_at": "2026-04-03T06:53:01.848605+00:00",
+  "generated_at": "2026-04-03T22:23:29.616976+00:00",
   "names": {
     "100m upgrader": "100M Upgrader",
     "abominable screaming tree": "Abominable Screaming Tree",
@@ -4684,6 +4690,7 @@
     "the dream maker": "The Dream-Maker",
     "the dust devil": "The Dust Devil",
     "the easter shrine": "The Easter Shrine",
+    "the egg portal": "The Egg Portal",
     "the eternal overseer": "The Eternal Overseer",
     "the final upgrader": "The Final Upgrader",
     "the fissure": "The Fissure",
